@@ -171,7 +171,7 @@ def read_ercs_split(file_bytes: bytes) -> tuple[float, float]:
     return shelter, hh
 
 
-def build_line_items(all_gifts_bytes: bytes, ercs_bytes: bytes) -> tuple[list[LineItem], list[str]]:
+def build_line_items(all_gifts_bytes: bytes, ercs_bytes: bytes) -> tuple[list[LineItem], list[LineItem], list[str]]:
     """Build line items and return (items, warnings)."""
     warnings = []
     totals = read_all_gifts(all_gifts_bytes)
@@ -200,16 +200,24 @@ def build_line_items(all_gifts_bytes: bytes, ercs_bytes: bytes) -> tuple[list[Li
             "Check that both workbooks are from the same period."
         )
 
+    # Items for IIF (skip zeros)
     items: list[LineItem] = []
     for label in LINE_ORDER:
         amt = round(amounts.get(label, 0.0), 2)
         if amt == 0:
             continue
         items.append(LineItem(label=label, class_num=LINE_TO_CLASS[label], amount=amt))
+
+    # Items for Excel JE (include all lines, even zeros)
+    all_items: list[LineItem] = []
+    for label in LINE_ORDER:
+        amt = round(amounts.get(label, 0.0), 2)
+        all_items.append(LineItem(label=label, class_num=LINE_TO_CLASS[label], amount=amt))
+
     for label, amt in amounts.items():
         if label not in LINE_TO_CLASS and round(amt, 2) != 0:
             warnings.append(f"⚠️ Unmapped line '{label}' with amount {amt:,.2f} — skipped.")
-    return items, warnings
+    return items, all_items, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +368,14 @@ def build_excel_je(items: list[LineItem], posting_date: str, quarter: str) -> by
     ws.cell(row=desc_row, column=1, value="Description").font = bold
     ws.cell(row=desc_row, column=2, value=f"To record {quarter} gifts in kind.")
 
+    # --- Footer / signature block ---
+    footer_start = desc_row + 3
+    ws.cell(row=footer_start, column=4, value="Date entered").font = bold
+    ws.cell(row=footer_start, column=5, value=dt).number_format = "m/d/yy"
+    ws.cell(row=footer_start + 1, column=4, value="Prepared by").font = bold
+    ws.cell(row=footer_start + 2, column=4, value="Entered by").font = bold
+    ws.cell(row=footer_start + 4, column=4, value="Reviewed/Approved by").font = bold
+
     # --- Write to bytes ---
     buf = io.BytesIO()
     wb.save(buf)
@@ -431,14 +447,14 @@ def main():
                 all_gifts_bytes = all_gifts_file.read()
                 ercs_bytes = ercs_file.read()
 
-                items, warnings = build_line_items(all_gifts_bytes, ercs_bytes)
+                items, all_items, warnings = build_line_items(all_gifts_bytes, ercs_bytes)
 
                 if not items:
                     st.error("No line items were generated. Check that the uploaded files are correct.")
                     return
 
                 iif_content = build_iif(items, posting_date.strip(), quarter.strip())
-                excel_bytes = build_excel_je(items, posting_date.strip(), quarter.strip())
+                excel_bytes = build_excel_je(all_items, posting_date.strip(), quarter.strip())
 
                 # Show warnings
                 for w in warnings:
