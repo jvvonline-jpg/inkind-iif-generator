@@ -425,10 +425,18 @@ def main():
 
     st.markdown("---")
 
-    # --- Generate ---
-    st.subheader("3. Generate Files")
+    # --- Output choice ---
+    st.subheader("3. Choose Output")
 
-    if st.button("🚀 Generate IIF + Excel JE", type="primary", use_container_width=True):
+    output_choice = st.radio(
+        "What would you like to generate?",
+        ["IIF File (for QuickBooks import)", "Excel JE (General Journal spreadsheet)", "Both"],
+        horizontal=True,
+    )
+
+    st.markdown("---")
+
+    if st.button("🚀 Generate", type="primary", use_container_width=True):
         if not all_gifts_file:
             st.error("Please upload the **All Gifts** workbook.")
             return
@@ -442,7 +450,7 @@ def main():
             st.error("Please enter a quarter label.")
             return
 
-        with st.spinner("Reading workbooks and generating IIF..."):
+        with st.spinner("Reading workbooks and generating files..."):
             try:
                 all_gifts_bytes = all_gifts_file.read()
                 ercs_bytes = ercs_file.read()
@@ -453,16 +461,13 @@ def main():
                     st.error("No line items were generated. Check that the uploaded files are correct.")
                     return
 
-                iif_content = build_iif(items, posting_date.strip(), quarter.strip())
-                excel_bytes = build_excel_je(all_items, posting_date.strip(), quarter.strip())
-
                 # Show warnings
                 for w in warnings:
                     st.warning(w)
 
                 # Success
                 total = sum(i.amount for i in items)
-                st.success(f"IIF generated successfully — {len(items)} program lines, total: ${total:,.2f}")
+                st.success(f"Generated successfully — {len(items)} program lines, total: ${total:,.2f}")
 
                 # Summary table
                 st.markdown("**Line Item Summary:**")
@@ -482,11 +487,39 @@ def main():
                 })
                 st.table(table_data)
 
-                # Download buttons
+                # Download buttons based on choice
                 qtr_short = quarter.strip().split()[0] if quarter.strip() else "Q"
 
-                dl_col1, dl_col2 = st.columns(2)
-                with dl_col1:
+                want_iif = output_choice in ["IIF File (for QuickBooks import)", "Both"]
+                want_excel = output_choice in ["Excel JE (General Journal spreadsheet)", "Both"]
+
+                if want_iif and want_excel:
+                    iif_content = build_iif(items, posting_date.strip(), quarter.strip())
+                    excel_bytes = build_excel_je(all_items, posting_date.strip(), quarter.strip())
+                    dl_col1, dl_col2 = st.columns(2)
+                    with dl_col1:
+                        st.download_button(
+                            label="⬇️ Download IIF File",
+                            data=iif_content,
+                            file_name=f"In-Kind {qtr_short} IIF.iif",
+                            mime="text/plain",
+                            type="primary",
+                            use_container_width=True,
+                        )
+                    with dl_col2:
+                        st.download_button(
+                            label="⬇️ Download Excel JE",
+                            data=excel_bytes,
+                            file_name=f"In Kind {qtr_short} JE.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            type="primary",
+                            use_container_width=True,
+                        )
+                    with st.expander("Preview IIF contents"):
+                        st.code(iif_content, language=None)
+
+                elif want_iif:
+                    iif_content = build_iif(items, posting_date.strip(), quarter.strip())
                     st.download_button(
                         label="⬇️ Download IIF File",
                         data=iif_content,
@@ -495,7 +528,11 @@ def main():
                         type="primary",
                         use_container_width=True,
                     )
-                with dl_col2:
+                    with st.expander("Preview IIF contents"):
+                        st.code(iif_content, language=None)
+
+                elif want_excel:
+                    excel_bytes = build_excel_je(all_items, posting_date.strip(), quarter.strip())
                     st.download_button(
                         label="⬇️ Download Excel JE",
                         data=excel_bytes,
@@ -504,10 +541,6 @@ def main():
                         type="primary",
                         use_container_width=True,
                     )
-
-                # Show preview
-                with st.expander("Preview IIF contents"):
-                    st.code(iif_content, language=None)
 
             except Exception as e:
                 st.error(f"Error: {e}")
