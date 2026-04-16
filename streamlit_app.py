@@ -50,6 +50,9 @@ CLASS_PATHS = {
     "32303": "30000 Housing & Community Serv:32000 Shelter:32300 Shelter CM & Aftercare:32303 OPEH HH WO Child Cntrc",
     "21000": "20000 Resource Development:21000 Fundraising",
     "61000": "60000 Family Self-Sufficiency:61000 Laurel Learning Center",
+    "33000": "30000 Housing & Community Serv:33000 Supportive Housing",
+    "45000": "40000 CB & NR:45000 Opportunity Neighborhoods",
+    "63000": "60000 Family Self-Sufficiency:63000 Connections 4 Hope",
 }
 
 # All Gifts file's Fund Description → (class, memo suffix) mapping.
@@ -63,6 +66,9 @@ FUND_TO_CLASS = {
     "General Cornerstones Fund":                                      ("21000", "General CS"),
     "Herndon Neighborhood Resource Center Operations & Adult Services": ("42000", "HNRC -OAS"),
     "Laurel Learning Center":                                         ("61000", "LLC"),
+    "Supportive Housing":                                             ("33000", "Supportive Housing"),
+    "Opportunity Neighborhood (RestON)":                              ("45000", "ON (RestON)"),
+    "C4HP CCFP Svs Contract":                                        ("63000", "C4HP"),
     # ERCS (Embry Rucker Community Shelter) handled specially.
 }
 
@@ -71,6 +77,7 @@ LINE_ORDER = [
     "ASAPP", "Community Connected Sites", "ESHP (HOUSE)", "Food Hub",
     "ERCS Shelter", "Hypo - TOS", "HH w/ Children", "HH w/o Children",
     "General CS", "HNRC -OAS", "LLC",
+    "Supportive Housing", "ON (RestON)", "C4HP",
 ]
 
 LINE_TO_CLASS = {
@@ -85,6 +92,9 @@ LINE_TO_CLASS = {
     "General CS":                 "21000",
     "HNRC -OAS":                  "42000",
     "LLC":                        "61000",
+    "Supportive Housing":         "33000",
+    "ON (RestON)":                "45000",
+    "C4HP":                       "63000",
 }
 
 
