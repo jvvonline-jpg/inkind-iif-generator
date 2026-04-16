@@ -252,6 +252,122 @@ def build_iif(items: list[LineItem], posting_date: str, quarter: str, docnum: st
 
 
 # ---------------------------------------------------------------------------
+# Excel JE writer
+# ---------------------------------------------------------------------------
+
+from openpyxl.styles import Font, Alignment, Border, Side, numbers
+from openpyxl.utils import get_column_letter
+from datetime import datetime
+
+
+ACCT_FMT = '_(* #,##0.00_);_(* \\(#,##0.00\\);_(* "-"??_);_(@_)'
+
+
+def build_excel_je(items: list[LineItem], posting_date: str, quarter: str) -> bytes:
+    """Build an Excel General Journal matching the Cornerstones template layout."""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"{quarter} In-Kind"
+
+    # --- Column widths ---
+    col_widths = {"A": 12, "B": 28, "C": 14, "D": 9, "E": 49, "F": 15, "G": 16}
+    for col, w in col_widths.items():
+        ws.column_dimensions[col].width = w
+
+    # --- Styles ---
+    bold = Font(bold=True)
+    bold_center = Font(bold=True)
+    center = Alignment(horizontal="center")
+    medium_bottom = Border(bottom=Side(style="medium"))
+    thin_bottom = Border(bottom=Side(style="thin"))
+
+    # --- Header rows ---
+    ws.merge_cells("A1:G1")
+    ws["A1"] = "Cornerstones, Inc."
+    ws["A1"].font = bold
+    ws["A1"].alignment = center
+
+    ws.merge_cells("A2:G2")
+    ws["A2"] = "General Journal"
+    ws["A2"].font = bold
+    ws["A2"].alignment = center
+
+    ws["F3"] = "Gen'l Journal #"
+    ws["F3"].font = bold
+    ws["G3"] = "In-Kind"
+    ws["G3"].border = thin_bottom
+
+    # --- Column headers (row 5) ---
+    headers = ["Posting Date", "Account Name", "Account #", "Class", "Memo", "Debit", "Credit"]
+    for i, h in enumerate(headers, 1):
+        cell = ws.cell(row=5, column=i, value=h)
+        cell.font = bold
+        cell.alignment = center
+        cell.border = medium_bottom
+
+    # --- Parse posting date ---
+    try:
+        dt = datetime.strptime(posting_date.strip(), "%m/%d/%Y")
+    except ValueError:
+        dt = datetime.now()
+
+    qtr_short = quarter.split()[0] if quarter else "Q"
+
+    # --- Data rows ---
+    row = 6
+    for item in items:
+        exp_memo = f"{quarter} in-kind program exp per {qtr_short} summary - {item.label}"
+        rev_memo = f"{quarter} in-kind program rev per {qtr_short} summary - {item.label}"
+
+        # Debit line
+        ws.cell(row=row, column=1, value=dt).number_format = "mm-dd-yy"
+        ws.cell(row=row, column=2, value="In-Kind - Programs")
+        ws.cell(row=row, column=3, value=9026.1)
+        ws.cell(row=row, column=4, value=int(item.class_num))
+        ws.cell(row=row, column=5, value=exp_memo)
+        c = ws.cell(row=row, column=6, value=item.amount)
+        c.number_format = ACCT_FMT
+        c.font = bold
+        row += 1
+
+        # Credit line
+        ws.cell(row=row, column=1, value=dt).number_format = "mm-dd-yy"
+        ws.cell(row=row, column=2, value="In-Kind Goods & Prof Services")
+        ws.cell(row=row, column=3, value=8111)
+        ws.cell(row=row, column=4, value=int(item.class_num))
+        ws.cell(row=row, column=5, value=rev_memo)
+        c = ws.cell(row=row, column=7, value=item.amount)
+        c.number_format = ACCT_FMT
+        c.font = bold
+        row += 1
+
+    # --- Totals row ---
+    last_data_row = row - 1
+    total_row = row
+    f_sum = ws.cell(row=total_row, column=6, value=f"=SUM(F6:F{last_data_row})")
+    f_sum.number_format = ACCT_FMT
+    f_sum.font = bold
+    f_sum.border = thin_bottom
+    g_sum = ws.cell(row=total_row, column=7, value=f"=SUM(G6:G{last_data_row})")
+    g_sum.number_format = ACCT_FMT
+    g_sum.font = bold
+    g_sum.border = thin_bottom
+
+    # --- Description row ---
+    desc_row = total_row + 1
+    ws.cell(row=desc_row, column=1, value="Description").font = bold
+    ws.cell(row=desc_row, column=2, value=f"To record {quarter} gifts in kind.")
+
+    # --- Write to bytes ---
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
 # Streamlit App
 # ---------------------------------------------------------------------------
 
@@ -294,9 +410,9 @@ def main():
     st.markdown("---")
 
     # --- Generate ---
-    st.subheader("3. Generate IIF")
+    st.subheader("3. Generate Files")
 
-    if st.button("🚀 Generate IIF File", type="primary", use_container_width=True):
+    if st.button("🚀 Generate IIF + Excel JE", type="primary", use_container_width=True):
         if not all_gifts_file:
             st.error("Please upload the **All Gifts** workbook.")
             return
@@ -322,6 +438,7 @@ def main():
                     return
 
                 iif_content = build_iif(items, posting_date.strip(), quarter.strip())
+                excel_bytes = build_excel_je(items, posting_date.strip(), quarter.strip())
 
                 # Show warnings
                 for w in warnings:
@@ -349,18 +466,28 @@ def main():
                 })
                 st.table(table_data)
 
-                # Download button
+                # Download buttons
                 qtr_short = quarter.strip().split()[0] if quarter.strip() else "Q"
-                filename = f"In-Kind {qtr_short} IIF.iif"
 
-                st.download_button(
-                    label="⬇️ Download IIF File",
-                    data=iif_content,
-                    file_name=filename,
-                    mime="text/plain",
-                    type="primary",
-                    use_container_width=True,
-                )
+                dl_col1, dl_col2 = st.columns(2)
+                with dl_col1:
+                    st.download_button(
+                        label="⬇️ Download IIF File",
+                        data=iif_content,
+                        file_name=f"In-Kind {qtr_short} IIF.iif",
+                        mime="text/plain",
+                        type="primary",
+                        use_container_width=True,
+                    )
+                with dl_col2:
+                    st.download_button(
+                        label="⬇️ Download Excel JE",
+                        data=excel_bytes,
+                        file_name=f"In Kind {qtr_short} JE.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                        use_container_width=True,
+                    )
 
                 # Show preview
                 with st.expander("Preview IIF contents"):
