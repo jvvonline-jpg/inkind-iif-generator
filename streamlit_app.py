@@ -171,8 +171,8 @@ def read_ercs_split(file_bytes: bytes) -> tuple[float, float]:
     return shelter, hh
 
 
-def build_line_items(all_gifts_bytes: bytes, ercs_bytes: bytes) -> tuple[list[LineItem], list[LineItem], list[str]]:
-    """Build line items and return (items, warnings)."""
+def build_line_items(all_gifts_bytes: bytes, ercs_bytes: bytes) -> tuple[list[LineItem], list[LineItem], list[str], dict[str, float]]:
+    """Build line items and return (items, all_items, warnings, fund_totals)."""
     warnings = []
     totals = read_all_gifts(all_gifts_bytes)
     shelter, hh = read_ercs_split(ercs_bytes)
@@ -217,7 +217,7 @@ def build_line_items(all_gifts_bytes: bytes, ercs_bytes: bytes) -> tuple[list[Li
     for label, amt in amounts.items():
         if label not in LINE_TO_CLASS and round(amt, 2) != 0:
             warnings.append(f"⚠️ Unmapped line '{label}' with amount {amt:,.2f} — skipped.")
-    return items, all_items, warnings
+    return items, all_items, warnings, totals
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +269,65 @@ from datetime import datetime
 
 
 ACCT_FMT = '_(* #,##0.00_);_(* \\(#,##0.00\\);_(* "-"??_);_(@_)'
+
+
+def build_fund_summary_excel(fund_totals: dict[str, float], quarter: str) -> bytes:
+    """Build a simple Excel summary showing Gift Amount totals by Fund Description."""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"{quarter} Fund Summary"
+
+    # Column widths
+    ws.column_dimensions["A"].width = 55
+    ws.column_dimensions["B"].width = 18
+
+    bold = Font(bold=True)
+    center = Alignment(horizontal="center")
+    medium_bottom = Border(bottom=Side(style="medium"))
+    thin_bottom = Border(bottom=Side(style="thin"))
+
+    # Title
+    ws.merge_cells("A1:B1")
+    ws["A1"] = "Cornerstones, Inc."
+    ws["A1"].font = bold
+    ws["A1"].alignment = center
+
+    ws.merge_cells("A2:B2")
+    ws["A2"] = f"{quarter} In-Kind Gifts — Fund Description Breakdown"
+    ws["A2"].font = bold
+    ws["A2"].alignment = center
+
+    # Column headers (row 4)
+    ws.cell(row=4, column=1, value="Fund Description").font = bold
+    ws.cell(row=4, column=1).border = medium_bottom
+    ws.cell(row=4, column=2, value="Gift Amount").font = bold
+    ws.cell(row=4, column=2).border = medium_bottom
+    ws.cell(row=4, column=2).alignment = center
+
+    # Sort by amount descending
+    sorted_funds = sorted(fund_totals.items(), key=lambda x: x[1], reverse=True)
+
+    row = 5
+    for fund, amt in sorted_funds:
+        ws.cell(row=row, column=1, value=fund)
+        c = ws.cell(row=row, column=2, value=amt)
+        c.number_format = ACCT_FMT
+        row += 1
+
+    # Totals row
+    total_row = row
+    ws.cell(row=total_row, column=1, value="TOTAL").font = bold
+    total_cell = ws.cell(row=total_row, column=2, value=f"=SUM(B5:B{total_row - 1})")
+    total_cell.number_format = ACCT_FMT
+    total_cell.font = bold
+    total_cell.border = thin_bottom
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
 
 
 def build_excel_je(items: list[LineItem], posting_date: str, quarter: str) -> bytes:
@@ -455,7 +514,7 @@ def main():
                 all_gifts_bytes = all_gifts_file.read()
                 ercs_bytes = ercs_file.read()
 
-                items, all_items, warnings = build_line_items(all_gifts_bytes, ercs_bytes)
+                items, all_items, warnings, fund_totals = build_line_items(all_gifts_bytes, ercs_bytes)
 
                 if not items:
                     st.error("No line items were generated. Check that the uploaded files are correct.")
@@ -541,6 +600,28 @@ def main():
                         type="primary",
                         use_container_width=True,
                     )
+
+                # --- Fund Description Breakdown ---
+                st.markdown("---")
+                st.markdown("**📋 Fund Description Breakdown:**")
+                sorted_funds = sorted(fund_totals.items(), key=lambda x: x[1], reverse=True)
+                fund_table = []
+                for fund, amt in sorted_funds:
+                    fund_table.append({"Fund Description": fund, "Gift Amount": f"${amt:,.2f}"})
+                fund_table.append({
+                    "Fund Description": "**TOTAL**",
+                    "Gift Amount": f"**${sum(fund_totals.values()):,.2f}**",
+                })
+                st.table(fund_table)
+
+                fund_summary_bytes = build_fund_summary_excel(fund_totals, quarter.strip())
+                st.download_button(
+                    label="⬇️ Download Fund Summary (Excel)",
+                    data=fund_summary_bytes,
+                    file_name=f"In-Kind {qtr_short} Fund Summary.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
 
             except Exception as e:
                 st.error(f"Error: {e}")
